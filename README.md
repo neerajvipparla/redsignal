@@ -92,7 +92,7 @@ Set both `APP_USER` and `APP_PASSWORD` to put the whole app behind basic auth â€
 - **FastAPI** for the backend API and WebSocket
 - **PRAW** for the Reddit streaming API
 - **SQLite** in WAL mode for persistent storage
-- **Anthropic / OpenAI / Ollama** for AI filtering and reply drafting
+- **Anthropic / OpenAI / Ollama / OpenCode** for AI filtering and reply drafting. For OpenCode, run `opencode serve --port 4096`, then add an OpenCode key in Vault with that URL and a `provider/model`.
 - **Tailwind CSS** and **Chart.js** from CDN, no build step
 - **Docker Compose** for deployment
 

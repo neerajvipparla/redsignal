@@ -13,7 +13,7 @@ export default function ListenerDrawer({ listener, onClose }) {
   const saveTimer = useRef(null);
 
   const rCreds = (cfg.credentials || []).filter(c => c.type === 'reddit');
-  const aiCreds = (cfg.credentials || []).filter(c => ['anthropic', 'openai', 'ollama'].includes(c.type));
+  const aiCreds = (cfg.credentials || []).filter(c => ['anthropic', 'openai', 'ollama', 'opencode'].includes(c.type));
 
   const persist = (updated) => {
     const listeners = (cfg.listeners || []).map(l => l.id === updated.id ? updated : l);
