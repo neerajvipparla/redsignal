@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import time
+from urllib.parse import urlparse
 
 import requests
 
@@ -22,22 +23,35 @@ class OpenCodeError(RuntimeError):
 
 
 def _oc_session(credential: dict) -> tuple[requests.Session, str]:
+    base = (credential.get("base_url") or OPENCODE_DEFAULT_URL).strip().rstrip("/")
+    u = urlparse(base)
+    if u.scheme not in ("http", "https") or not u.hostname:
+        raise OpenCodeError("OpenCode server URL must start with http:// or https://")
     s = requests.Session()
     if credential.get("password"):
         s.auth = (credential.get("username") or OPENCODE_USER, credential["password"])
-    return s, (credential.get("base_url") or OPENCODE_DEFAULT_URL).rstrip("/")
+    return s, base
 
 
 def _oc_call(s: requests.Session, base: str, method: str, path: str, **kw):
+    # Error text reaches the browser, and the URL is user-supplied: never echo the
+    # target URL, the connection error, or the response body (SSRF information leak).
+    # Redirects are refused so a server can't bounce the request (and the password)
+    # on to another host.
     try:
-        r = s.request(method, base + path, timeout=15, **kw)
+        r = s.request(method, base + path, timeout=15, allow_redirects=False, **kw)
     except requests.RequestException as exc:
-        raise OpenCodeError(f"Cannot reach OpenCode at {base} — is `opencode serve` running? ({exc})") from exc
+        raise OpenCodeError("Cannot reach the OpenCode server — check the URL and that `opencode serve` is running") from exc
     if r.status_code == 401:
         raise OpenCodeError("OpenCode server rejected the credentials (401) — check the password in Vault")
-    if not r.ok:
-        raise OpenCodeError(f"OpenCode {method} {path} failed: HTTP {r.status_code} {r.text[:200]}")
-    return r.json() if r.content else None
+    if r.is_redirect or not r.ok:
+        raise OpenCodeError(f"OpenCode {method} {path} failed (HTTP {r.status_code}) — is this an OpenCode server?")
+    if not r.content:
+        return None
+    try:
+        return r.json()
+    except ValueError as exc:
+        raise OpenCodeError("Unexpected response — is this URL an OpenCode server?") from exc
 
 
 def list_opencode_models(credential: dict) -> list[dict]:

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useApp } from '../../context.jsx';
 import { saveConfig } from '../../api.js';
+import { OPENCODE_URL } from '../../constants.js';
 import CredCard from './CredCard.jsx';
 
 function newCred(type) {
@@ -8,7 +9,7 @@ function newCred(type) {
   if (type === 'reddit')    return { id, type, name: 'New Reddit Account', client_id: '', client_secret: '', user_agent: 'redsignal/1.0 by u/yourname' };
   if (type === 'openai')    return { id, type, name: 'New OpenAI Key', api_key: '', model: '' };
   if (type === 'ollama')    return { id, type, name: 'Local Ollama', base_url: 'http://localhost:11434', model: '' };
-  if (type === 'opencode')  return { id, type, name: 'OpenCode Server', base_url: 'http://127.0.0.1:4096', password: '', model: '' };
+  if (type === 'opencode')  return { id, type, name: 'OpenCode Server', base_url: OPENCODE_URL, password: '', model: '' };
   return { id, type: 'anthropic', name: 'New Anthropic Key', api_key: '', model: '' };
 }
 

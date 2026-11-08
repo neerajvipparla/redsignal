@@ -1,17 +1,17 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { useApp } from '../../context.jsx';
 import { apiFetch } from '../../api.js';
+import { OPENCODE_URL } from '../../constants.js';
 
-const OPENCODE_URL = 'http://127.0.0.1:4096';
-
-// Own component so its useState sits outside CredCard's early return.
-function OpenCodeFields({ draft, f, onChange, Label }) {
+// Own component so its hooks sit outside CredCard's early return.
+function OpenCodeFields({ draft, f, Label }) {
   const [models, setModels]   = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState('');
+  const listId = useId();  // two cards in edit mode must not share one datalist
 
   const loadModels = async () => {
-    setLoading(true); setError('');
+    setLoading(true); setError(''); setModels([]);  // never show models from a previous server/password
     try {
       const r = await apiFetch('/api/opencode/models', {
         method: 'POST',
@@ -21,8 +21,9 @@ function OpenCodeFields({ draft, f, onChange, Label }) {
       if (r.error) setError(r.error); else setModels(r.models || []);
     } catch (e) {
       setError(String(e));
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return <>
@@ -34,17 +35,17 @@ function OpenCodeFields({ draft, f, onChange, Label }) {
     </label>
     <label className="block">
       <Label>Server password <span className="font-normal text-slate-400">(optional — only if OPENCODE_SERVER_PASSWORD is set)</span></Label>
-      <input className="inp mt-1.5 text-sm font-mono" type="password" value={draft.password || ''} onChange={f('password')} />
+      <input className="inp mt-1.5 text-sm font-mono" type="password" autoComplete="new-password" value={draft.password || ''} onChange={f('password')} />
     </label>
     <label className="block">
       <Label>Model <span className="font-normal text-slate-400">(provider/model)</span></Label>
       <div className="flex gap-2 mt-1.5">
-        <input className="inp text-sm font-mono flex-1" list="opencode-models" placeholder="opencode/big-pickle" value={draft.model || ''} onChange={f('model')} />
+        <input className="inp text-sm font-mono flex-1" list={listId} placeholder="opencode/big-pickle" value={draft.model || ''} onChange={f('model')} />
         <button type="button" onClick={loadModels} disabled={loading} className="text-xs px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium transition-colors flex-shrink-0 disabled:opacity-50">
           {loading ? 'Loading…' : 'Load models'}
         </button>
       </div>
-      <datalist id="opencode-models">
+      <datalist id={listId}>
         {models.map(m => <option key={m.id} value={m.id}>{m.provider} · {m.name}</option>)}
       </datalist>
       {error && <p className="text-xs text-red-500 mt-1.5">{error}</p>}
@@ -169,7 +170,7 @@ export default function CredCard({ cred, isEditing, draft, onEdit, onCancel, onS
         </label>
       </>}
 
-      {cred.type === 'opencode' && <OpenCodeFields draft={draft} f={f} onChange={onChange} Label={Label} />}
+      {cred.type === 'opencode' && <OpenCodeFields draft={draft} f={f} Label={Label} />}
 
       {cred.type === 'ollama' && <>
         <label className="block"><Label>Name</Label><input className="inp mt-1.5" value={draft.name || ''} onChange={f('name')} /></label>
