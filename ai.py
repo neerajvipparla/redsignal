@@ -1,10 +1,117 @@
 from __future__ import annotations
 
 import os
+import time
+
+import requests
+
+# ── OpenCode (`opencode serve`) ───────────────────────────────────────────────
+# OpenCode's server is NOT OpenAI-compatible: it is a session-based REST API.
+# One prompt = create session → prompt_async → poll messages → delete session.
+OPENCODE_DEFAULT_URL = "http://127.0.0.1:4096"
+OPENCODE_USER        = "opencode"   # basic-auth user when OPENCODE_SERVER_PASSWORD is set
+OPENCODE_TIMEOUT     = 120          # seconds to wait for a completion
+# Fallback if /experimental/tool/ids is unavailable. The server's own list is
+# preferred — it also covers MCP/plugin tools this static list can't know about.
+_OPENCODE_TOOLS = ["invalid", "question", "bash", "read", "glob", "grep", "edit", "write",
+                   "task", "webfetch", "todowrite", "websearch", "skill", "apply_patch"]
+
+
+class OpenCodeError(RuntimeError):
+    pass
+
+
+def _oc_session(credential: dict) -> tuple[requests.Session, str]:
+    s = requests.Session()
+    if credential.get("password"):
+        s.auth = (credential.get("username") or OPENCODE_USER, credential["password"])
+    return s, (credential.get("base_url") or OPENCODE_DEFAULT_URL).rstrip("/")
+
+
+def _oc_call(s: requests.Session, base: str, method: str, path: str, **kw):
+    try:
+        r = s.request(method, base + path, timeout=15, **kw)
+    except requests.RequestException as exc:
+        raise OpenCodeError(f"Cannot reach OpenCode at {base} — is `opencode serve` running? ({exc})") from exc
+    if r.status_code == 401:
+        raise OpenCodeError("OpenCode server rejected the credentials (401) — check the password in Vault")
+    if not r.ok:
+        raise OpenCodeError(f"OpenCode {method} {path} failed: HTTP {r.status_code} {r.text[:200]}")
+    return r.json() if r.content else None
+
+
+def list_opencode_models(credential: dict) -> list[dict]:
+    """Models from providers the server has credentials for, as 'provider/model' ids."""
+    s, base = _oc_session(credential)
+    data = _oc_call(s, base, "GET", "/config/providers")
+    out = []
+    for p in data.get("providers", []):
+        for mid, m in (p.get("models") or {}).items():
+            out.append({"id": f"{p['id']}/{mid}", "provider": p.get("name") or p["id"],
+                        "name": m.get("name") or mid})
+    return sorted(out, key=lambda m: m["id"])
+
+
+def _opencode_prompt(prompt: str, credential: dict, timeout: int = OPENCODE_TIMEOUT) -> str:
+    model = credential.get("model") or ""
+    if "/" not in model:
+        raise OpenCodeError("OpenCode model must be 'provider/model' (e.g. opencode/big-pickle) — pick one in Vault")
+    provider_id, model_id = model.split("/", 1)
+
+    s, base = _oc_session(credential)
+    try:
+        tool_ids = _oc_call(s, base, "GET", "/experimental/tool/ids")
+    except OpenCodeError:
+        tool_ids = _OPENCODE_TOOLS
+    # Reddit text is untrusted and goes straight into this prompt: no tool may run.
+    tools = {t: False for t in {*tool_ids, *_OPENCODE_TOOLS}}
+
+    # A fixed title stops OpenCode spending an extra LLM call auto-titling the session.
+    sid = _oc_call(s, base, "POST", "/session", json={"title": "redsignal"})["id"]
+    try:
+        _oc_call(s, base, "POST", f"/session/{sid}/prompt_async", json={
+            "model":  {"providerID": provider_id, "modelID": model_id},
+            "system": "You are a text-only assistant. Reply with plain text only.",
+            "tools":  tools,
+            "parts":  [{"type": "text", "text": prompt}],
+        })
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            time.sleep(0.6)
+            # The server retries failures (rate limit, free tier) silently and forever.
+            st = (_oc_call(s, base, "GET", "/session/status") or {}).get(sid) or {}
+            if st.get("type") == "retry":
+                raise OpenCodeError(st.get("message") or "OpenCode is retrying a failed request")
+            for m in _oc_call(s, base, "GET", f"/session/{sid}/message"):
+                if m["info"].get("role") != "assistant":
+                    continue
+                err = m["info"].get("error")
+                if err:
+                    raise OpenCodeError((err.get("data") or {}).get("message") or err.get("name") or "OpenCode error")
+                parts = m.get("parts", [])
+                if any(p["type"] == "tool" for p in parts):
+                    raise OpenCodeError("OpenCode model attempted a tool call; refusing (tools are disabled)")
+                if any(p["type"] == "step-finish" for p in parts):
+                    text = "".join(p.get("text", "") for p in parts
+                                   if p["type"] == "text" and not p.get("synthetic")).strip()
+                    if not text:
+                        raise OpenCodeError("OpenCode returned an empty response")
+                    return text
+        raise OpenCodeError(f"OpenCode did not respond within {timeout}s")
+    finally:
+        for method, path in (("POST", f"/session/{sid}/abort"), ("DELETE", f"/session/{sid}")):
+            try:
+                _oc_call(s, base, method, path)
+            except OpenCodeError:
+                pass
 
 
 def run_ai_prompt(prompt: str, credential: dict, max_tokens: int = 300) -> str:
     ctype = credential.get("type", "anthropic")
+
+    if ctype == "opencode":
+        # OpenCode has no max_tokens knob on the prompt API; the arg is ignored.
+        return _opencode_prompt(prompt, credential)
 
     if ctype == "anthropic":
         import anthropic  # type: ignore

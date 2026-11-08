@@ -1,4 +1,58 @@
+import { useState } from 'react';
 import { useApp } from '../../context.jsx';
+import { apiFetch } from '../../api.js';
+
+const OPENCODE_URL = 'http://127.0.0.1:4096';
+
+// Own component so its useState sits outside CredCard's early return.
+function OpenCodeFields({ draft, f, onChange, Label }) {
+  const [models, setModels]   = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError]     = useState('');
+
+  const loadModels = async () => {
+    setLoading(true); setError('');
+    try {
+      const r = await apiFetch('/api/opencode/models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ base_url: draft.base_url || OPENCODE_URL, password: draft.password || '' }),
+      });
+      if (r.error) setError(r.error); else setModels(r.models || []);
+    } catch (e) {
+      setError(String(e));
+    }
+    setLoading(false);
+  };
+
+  return <>
+    <label className="block"><Label>Name</Label><input className="inp mt-1.5" value={draft.name || ''} onChange={f('name')} /></label>
+    <label className="block">
+      <Label>Server URL</Label>
+      <input className="inp mt-1.5 text-sm font-mono" placeholder={OPENCODE_URL} value={draft.base_url ?? ''} onChange={f('base_url')} />
+      <p className="text-xs text-slate-400 mt-1.5">Start with <code className="bg-slate-100 px-1 rounded">opencode serve --port 4096</code> — its default port is random.</p>
+    </label>
+    <label className="block">
+      <Label>Server password <span className="font-normal text-slate-400">(optional — only if OPENCODE_SERVER_PASSWORD is set)</span></Label>
+      <input className="inp mt-1.5 text-sm font-mono" type="password" value={draft.password || ''} onChange={f('password')} />
+    </label>
+    <label className="block">
+      <Label>Model <span className="font-normal text-slate-400">(provider/model)</span></Label>
+      <div className="flex gap-2 mt-1.5">
+        <input className="inp text-sm font-mono flex-1" list="opencode-models" placeholder="opencode/big-pickle" value={draft.model || ''} onChange={f('model')} />
+        <button type="button" onClick={loadModels} disabled={loading} className="text-xs px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium transition-colors flex-shrink-0 disabled:opacity-50">
+          {loading ? 'Loading…' : 'Load models'}
+        </button>
+      </div>
+      <datalist id="opencode-models">
+        {models.map(m => <option key={m.id} value={m.id}>{m.provider} · {m.name}</option>)}
+      </datalist>
+      {error && <p className="text-xs text-red-500 mt-1.5">{error}</p>}
+      {models.length > 0 && <p className="text-xs text-slate-400 mt-1.5">{models.length} models available — start typing to filter.</p>}
+    </label>
+    <p className="text-xs text-slate-400">Tools are disabled for every request, so post text can't make OpenCode run anything.</p>
+  </>;
+}
 
 const TYPE_UI = {
   reddit: {
@@ -12,6 +66,10 @@ const TYPE_UI = {
   openai: {
     bg: 'bg-emerald-100', color: 'text-emerald-600',
     icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83m9.9 9.9 2.83 2.83M1 12h4m14 0h4M4.22 19.78l2.83-2.83m9.9-9.9 2.83-2.83"/></svg>,
+  },
+  opencode: {
+    bg: 'bg-sky-100', color: 'text-sky-600',
+    icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 17l6-6-6-6M12 19h8"/></svg>,
   },
   ollama: {
     bg: 'bg-slate-100', color: 'text-slate-500',
@@ -32,6 +90,9 @@ export default function CredCard({ cred, isEditing, draft, onEdit, onCancel, onS
     } else if (cred.type === 'openai') {
       preview = cred.api_key ? `sk-…${cred.api_key.slice(-4)}` : 'No key set';
       badge = <span className="text-xs bg-emerald-50 text-emerald-600 border border-emerald-100 px-1.5 py-0.5 rounded-md font-medium">OpenAI</span>;
+    } else if (cred.type === 'opencode') {
+      preview = cred.base_url || OPENCODE_URL;
+      badge = <span className="text-xs bg-sky-50 text-sky-600 border border-sky-100 px-1.5 py-0.5 rounded-md font-medium">OpenCode</span>;
     } else if (cred.type === 'ollama') {
       preview = cred.base_url || 'http://localhost:11434';
       badge = <span className="text-xs bg-slate-100 text-slate-500 border border-slate-200 px-1.5 py-0.5 rounded-md font-medium">Local</span>;
@@ -107,6 +168,8 @@ export default function CredCard({ cred, isEditing, draft, onEdit, onCancel, onS
           <input className="inp mt-1.5 text-sm font-mono" placeholder="gpt-4o-mini" value={draft.model || ''} onChange={f('model')} />
         </label>
       </>}
+
+      {cred.type === 'opencode' && <OpenCodeFields draft={draft} f={f} onChange={onChange} Label={Label} />}
 
       {cred.type === 'ollama' && <>
         <label className="block"><Label>Name</Label><input className="inp mt-1.5" value={draft.name || ''} onChange={f('name')} /></label>

@@ -8,6 +8,7 @@ function newCred(type) {
   if (type === 'reddit')    return { id, type, name: 'New Reddit Account', client_id: '', client_secret: '', user_agent: 'redsignal/1.0 by u/yourname' };
   if (type === 'openai')    return { id, type, name: 'New OpenAI Key', api_key: '', model: '' };
   if (type === 'ollama')    return { id, type, name: 'Local Ollama', base_url: 'http://localhost:11434', model: '' };
+  if (type === 'opencode')  return { id, type, name: 'OpenCode Server', base_url: 'http://127.0.0.1:4096', password: '', model: '' };
   return { id, type: 'anthropic', name: 'New Anthropic Key', api_key: '', model: '' };
 }
 
@@ -20,7 +21,7 @@ export default function Vault() {
   const listeners   = cfg.listeners   || [];
 
   const reddit = credentials.filter(c => c.type === 'reddit');
-  const ai     = credentials.filter(c => ['anthropic', 'openai', 'ollama'].includes(c.type));
+  const ai     = credentials.filter(c => ['anthropic', 'openai', 'ollama', 'opencode'].includes(c.type));
 
   const listenerCount = (credId, field) =>
     listeners.filter(l => l[field] === credId).length;
@@ -117,8 +118,11 @@ export default function Vault() {
         {renderSection(
           ai,
           'AI Keys',
-          'Anthropic Claude, OpenAI, or local Ollama for filter pipelines.',
+          'Anthropic Claude, OpenAI, local Ollama, or an OpenCode server for filter pipelines.',
           <>
+            <button onClick={() => addCred('opencode')} className="flex items-center gap-1.5 px-3 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-sm font-medium transition-colors">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14"/></svg> OpenCode
+            </button>
             <button onClick={() => addCred('anthropic')} className="flex items-center gap-1.5 px-3 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-sm font-medium transition-colors">
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14"/></svg> Anthropic
             </button>

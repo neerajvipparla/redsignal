@@ -11,7 +11,7 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from ai import resolve_ai_cred, run_ai_prompt
+from ai import list_opencode_models, resolve_ai_cred, run_ai_prompt
 from config import load_config, save_config
 from db import db_log, get_db, get_setting, set_setting
 from hits import _hit_history, db_update_filter, row_to_hit
@@ -247,6 +247,20 @@ def api_draft_reply(req: _DraftReq) -> dict:
               f"Write only the reply. No preamble.")
     try:
         return {"reply": run_ai_prompt(prompt, cred, max_tokens=400)}
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+class _OpenCodeModelsReq(BaseModel):
+    base_url: str = ""
+    password: str = ""
+
+
+@router.post("/api/opencode/models")
+def api_opencode_models(req: _OpenCodeModelsReq) -> dict:
+    """Proxy to `opencode serve` — the browser can't call it directly (CORS)."""
+    try:
+        return {"models": list_opencode_models({"base_url": req.base_url, "password": req.password})}
     except Exception as exc:
         return {"error": str(exc)}
 
